@@ -12,7 +12,7 @@
 
 sizetype i;
 
-void Report( class TrainingStrategy*, sizetype epoch, sizetype maxEpochs, float currentMSE )
+void Report( class TrainingStrategy*, const Data * data, sizetype epoch, sizetype maxEpochs, float currentMSE )
 {
 	if( i % 100 == 0 )
 		printf( "\n [%llu]: Epoch = %7llu   ; MSE = %f ", i, epoch, currentMSE );
@@ -46,15 +46,15 @@ int main()
 		training.SetLearningFactor( 23.0f );
 		training.SetAvailbleToChangeLearningFactorMaximallyOncePerEpochs( 10 );
 		
-		training.Train( dataSet, 1000000, 0.001f, 1000000, Report );
+		training.Train( dataSet, 1000000, 0.001f, 1000, Report );
 		
-		while( false )
+		while( true )
 		{
 			float in[2];
 			scanf( "%f%f", in, in+1 );
 			training.AccessMainNetwork().Run( in );
 			printf( "\n Output: %f ", *training.AccessMainNetwork().GetOutputs() );
-			training.Train( dataSet, 1000000, 0.00001f, 900 );
+			training.Train( dataSet, 100000, 0.00000001f, 100000 );
 		}
 		
 		training.Destroy();

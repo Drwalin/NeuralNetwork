@@ -19,6 +19,11 @@
 #include <vector>
 #include <fstream>
 
+float BackPropagation::GetLearningFactor() const
+{
+	return this->learningFactor;
+}
+
 void BackPropagation::SetLearningFactor( float value )
 {
 	this->learningFactor = value;
@@ -26,6 +31,15 @@ void BackPropagation::SetLearningFactor( float value )
 
 void BackPropagation::AllocateArrays()
 {
+	if( this->deltaWeights )
+		Free( this->deltaWeights );
+	if( this->prevDeltaWeights )
+		Free( this->prevDeltaWeights );
+	if( this->gradient )
+		Free( this->gradient );
+	this->gradient = nullptr;
+	this->deltaWeights = nullptr;
+	this->prevDeltaWeights = nullptr;
 	if( this->ann.IsValid() )
 	{
 		this->deltaWeights = Alloc<float>( this->ann.allWeights );
@@ -72,13 +86,13 @@ void BackPropagation::TrainOneEpoch( const Data & data )
 			{
 				this->MSE /= float( data.Size() );
 				
-				static sizetype learnFactoModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
+				static sizetype learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
 				if( this->MSE >= this->prevMSE )
 				{
-					if( learnFactoModifyCooldown < this->currentEpoch )
+					if( learnFactorModifyCooldown < this->currentEpoch )
 					{
 						this->learningFactor *= learningFactorModifier;
-						learnFactoModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
+						learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
 					}
 				}
 				
@@ -218,6 +232,8 @@ unsigned BackPropagation::CreateSquareErrorAnalysisPerAllDataSet( const char * f
 			temp.back() = currentSE;
 		}
 		
+		unsigned long long GOOD = 0, ALL = 0;
+		
 		for( auto it = dataSet.begin(); it != dataSet.end(); ++it )
 		{
 			file << "\nDesired output:\n   ";
@@ -225,6 +241,26 @@ unsigned BackPropagation::CreateSquareErrorAnalysisPerAllDataSet( const char * f
 			{
 				file << " " << float(it->first[i]) / 10000.0f;
 			}
+			
+			unsigned long long good = 0, bad = 0;
+			
+			for( i = 0; i < it->second.size(); ++i )
+			{
+				if( it->second[i] > writeOnlyGraterThan )
+				{
+					++bad;
+				}
+				else
+				{
+					++good;
+					++GOOD;
+				}
+				++ALL;
+			}
+			
+			printf( "\n    good / all   :   %llu / %llu  =  %f%% good", good, (good+bad), (float(good)/float(good+bad))*100.0f );
+			
+			file << "\n    good / all   :   " << good << " / " << (good+bad) << "  =  " << (float(good)/float(good+bad))*100.0f << "% good";
 			
 			for( i = 0; i < it->second.size(); ++i )
 			{
@@ -234,6 +270,8 @@ unsigned BackPropagation::CreateSquareErrorAnalysisPerAllDataSet( const char * f
 				}
 			}
 		}
+		
+		printf( "\n    Total goodness: %llu / %llu  =  %f%%", GOOD, ALL, float(GOOD)*100.0f/float(ALL) );
 		
 		file.close();
 		return 0;

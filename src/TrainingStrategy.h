@@ -16,12 +16,11 @@
 #include "NeuralNetwork.h"
 #include "Data.h"
 #include "Memory.h"
-#include "data.h"
 
 #include <vector>
 #include <iostream>
 
-typedef void (*ReportEventFunction)( class TrainingStrategy*, sizetype epoch, sizetype maxEpochs, float currentMSE );
+typedef void (*ReportEventFunction)( class TrainingStrategy*, const Data * data, sizetype epoch, sizetype maxEpochs, float currentMSE );
 
 class TrainingStrategy
 {
@@ -33,6 +32,8 @@ protected:
 	virtual unsigned SaveTrainingData( std::ostream & stream ) const;
 	
 public:
+	
+	sizetype GetCurrentEpoch() const;
 	
 	virtual bool IsValid() const = 0;
 	

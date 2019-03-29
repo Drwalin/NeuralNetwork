@@ -42,6 +42,8 @@ public://private:
 	
 public:
 	
+	float GetLearningFactor() const;
+	
 	inline NeuralNetwork & AccessMainNetwork();
 	
 	unsigned CreateSquareErrorAnalysisPerAllDataSet( const char * fileName, const Data & data, float writeOnlyGraterThan = 0.0f );

@@ -29,7 +29,7 @@ void TrainingStrategy::Train( const Data & data, sizetype maxEpochs, float desir
 		if( this->GetCurrentError() < desiredError )
 		{
 			if( reportEvent )
-				reportEvent( this, i, maxEpochs, this->GetCurrentError() );
+				reportEvent( this, &data, i, maxEpochs, this->GetCurrentError() );
 			else
 				printf( "\n Epoch: %10llu max epochs: %10llu current error: %6.6f desired error: %6.6f reached ", this->currentEpoch, maxEpochs, this->GetCurrentError(), desiredError );
 			return;
@@ -40,12 +40,17 @@ void TrainingStrategy::Train( const Data & data, sizetype maxEpochs, float desir
 			if( i % reportBetweenEpochs == reportBetweenEpochs-1 )
 			{
 				if( reportEvent )
-					reportEvent( this, i, maxEpochs, this->GetCurrentError() );
+					reportEvent( this, &data, i, maxEpochs, this->GetCurrentError() );
 				else
 					printf( "\n Epoch: %10llu current error: %6.6f learning factor = %6.6f ", this->currentEpoch, this->GetCurrentError(), ((BackPropagation*)this)->learningFactor );
 			}
 		}
 	}
+}
+
+sizetype TrainingStrategy::GetCurrentEpoch() const
+{
+	return this->currentEpoch;
 }
 
 unsigned TrainingStrategy::LoadTrainingData( std::istream & stream )
