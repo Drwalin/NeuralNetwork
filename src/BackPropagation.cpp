@@ -29,22 +29,37 @@ void BackPropagation::SetLearningFactor( float value )
 	this->learningFactor = value;
 }
 
-void BackPropagation::AllocateArrays()
+void BackPropagation::AllocateArrays( sizetype arraysCount )
 {
-	if( this->deltaWeights )
-		Free( this->deltaWeights );
+	for( int i = 0; i < this->deltaWeights.size(); ++i )
+	{
+		if( this->deltaWeights[i] );
+			Free( this->deltaWeights[i] );
+	}
+	this->deltaWeights.clear();
+	
+	for( int i = 0; i < this->gradient.size(); ++i )
+	{
+		if( this->gradient[i] );
+			Free( this->gradient[i] );
+	}
+	this->gradient.clear();
+	
 	if( this->prevDeltaWeights )
 		Free( this->prevDeltaWeights );
-	if( this->gradient )
-		Free( this->gradient );
-	this->gradient = nullptr;
-	this->deltaWeights = nullptr;
 	this->prevDeltaWeights = nullptr;
+	
 	if( this->ann.IsValid() )
 	{
-		this->deltaWeights = Alloc<float>( this->ann.allWeights );
+		this->deltaWeights.resize( arraysCount );
+		for( int i = 0; i < this->deltaWeights.size(); ++i )
+			this->deltaWeights[i] = Alloc<float>( this->ann.allWeights );
+			
+		this->gradient.resize( arraysCount );
+		for( int i = 0; i < this->gradient.size(); ++i )
+			this->gradient[i] = Alloc<float>( this->ann.allNeurons - this->ann.neuronsPerLayers[0] );
+		
 		this->prevDeltaWeights = Alloc<float>( this->ann.allWeights );
-		this->gradient = Alloc<float>( this->ann.allNeurons - this->ann.neuronsPerLayers[0] );
 	}
 }
 
@@ -52,10 +67,19 @@ bool BackPropagation::IsValid() const
 {
 	if( this->ann.IsValid() == false )
 		return false;
-	if( this->gradient == nullptr )
+	
+	if( this->gradient.size() == 0 )
 		return false;
-	if( this->deltaWeights == nullptr )
+	for( int i = 0; i < this->gradient.size(); ++i )
+		if( this->gradient[i] == nullptr )
+			return false;
+	
+	if( this->deltaWeights.size() == 0 )
 		return false;
+	for( int i = 0; i < this->deltaWeights.size(); ++i )
+		if( this->deltaWeights[i] == nullptr )
+			return false;
+	
 	if( this->prevDeltaWeights == nullptr )
 		return false;
 	return true;
@@ -68,18 +92,27 @@ void BackPropagation::TrainOneEpoch( const Data & data )
 	{
 		if( this->ann.IsDataValid( data ) )
 		{
-			this->ClearDeltaWeights();
+			// begin threads
+			for( sizetype i = 0; i < this->threadsInfo.size(); ++i )
+				this->threadsInfo[i]->data.store( (void*)(&data) );
+			for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
+				this->threadsInfo[i]->flags.fetch_or( 1<<0 );
 			
-			sizetype i;
-			float currentSE;
-			for( i = 0; i < data.Size(); ++i )
+			this->ThreadFunction( 0 );
+			this->MSE = this->threadsInfo[0]->MSE;
+			
+			// end threads
+			for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
 			{
-				this->ann.Run( data[i].GetInputPointer() );
-				currentSE = this->ann.GetSE( data[i].GetOutputPointer() );
-				this->MSE += currentSE;
+				while( ( this->threadsInfo[i]->flags.load() & (1<<1) == 0 ) || ( this->threadsInfo[i]->flags.load() & (1<<0) == 1 ) )
+					std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
 				
-				this->CalculateGradient( data[i].GetOutputPointer() );
-				this->UpdateDeltaWeights();
+				this->threadsInfo[i]->flags.store( 0 );
+				this->MSE += this->threadsInfo[i]->MSE;
+				float * src = this->deltaWeights[i];
+				float * dst = this->deltaWeights[0];
+				for( sizetype j = 0; j < this->ann.allWeights; ++j, ++src, ++dst )
+					*dst += *src;
 			}
 			
 			if( data.Size() )
@@ -107,41 +140,41 @@ void BackPropagation::TrainOneEpoch( const Data & data )
 	}
 }
 
-void BackPropagation::CalculateGradient( float * desiredOutput )
+void BackPropagation::CalculateGradient( float * desiredOutput, sizetype threadID )
 {
 	if( this->IsValid() )
 	{
 		sizetype i, j;
 		
+		float * gradient = this->gradient[threadID];
+		
 		for( j = 0; j < this->ann.neuronsPerLayers[this->ann.layers-1]; ++j )
-			this->CalculateOutputNeuronGradient( this->ann.layers-1, j, desiredOutput );
+			this->CalculateOutputNeuronGradient( this->ann.layers-1, j, desiredOutput, gradient, threadID );
 		
 		for( i = this->ann.layers-2; i > 0; --i )
 			for( j = 0; j < this->ann.neuronsPerLayers[i]; ++j )
-				this->CalculateHiddenNeuronGradient( i, j );
+				this->CalculateHiddenNeuronGradient( i, j, gradient, threadID );
 	}
 }
 
-void BackPropagation::UpdateDeltaWeights()
+void BackPropagation::UpdateDeltaWeights( float * gradient_, float * deltaWeights_, sizetype threadID )
 {
 	if( this->IsValid() )
 	{
 		sizetype i, j;
-		float additionalDivider;
-		float * outptr;
 		for( i = 1; i < this->ann.layers; ++i )
 		{
 			for( j = 0; j < this->ann.neuronsPerLayers[i]; ++j )
-				this->UpdateDeltaWeight( i, j );
+				this->UpdateDeltaWeight( i, j, gradient_, deltaWeights_, threadID );
 		}
 	}
 }
 
-void BackPropagation::ClearDeltaWeights()
+void BackPropagation::ClearDeltaWeights( sizetype threadID )
 {
 	if( this->IsValid() )
 	{
-		float * ptr = this->deltaWeights;
+		float * ptr = this->deltaWeights[threadID];
 		float * end = ptr + this->ann.allWeights;
 		for( ; ptr < end; ++ptr )
 			*ptr = 0.0f;
@@ -153,12 +186,10 @@ void BackPropagation::UpdateWeights( sizetype numberOfTrainedDataSets )
 	if( this->IsValid() )
 	{
 		float * weight = this->ann.weights;
-		float * deltaWeight = this->deltaWeights;
-		float * weightEnd = weight + this->ann.allWeights;
-		float * prevDeltaWeight = this->prevDeltaWeights;
-		for( ; weight < weightEnd; ++weight, ++deltaWeight )
+		float * deltaWeights = this->deltaWeights[0];
+		for( int i = 0; i < this->ann.allWeights; ++i, ++weight, ++deltaWeights )
 		{
-			float delta = this->learningFactor * (*deltaWeight) / float(numberOfTrainedDataSets);
+			float delta = this->learningFactor * (*deltaWeights) / float(numberOfTrainedDataSets);
 			if( delta <= -1.0f )
 				delta = -1.0f;
 			else if( delta >= 1.0f )
@@ -183,7 +214,7 @@ unsigned BackPropagation::LoadTrainingData( std::istream & stream )
 	TrainingStrategy::LoadTrainingData( stream );
 	unsigned ret = this->ann.LoadFromStandardStream( stream );
 	stream >> this->learningFactor;
-	this->AllocateArrays();
+	this->AllocateArrays( this->threadsCount );
 	stream >> this->minWeight;
 	stream >> this->maxWeight;
 	return ret;
@@ -223,8 +254,8 @@ unsigned BackPropagation::CreateSquareErrorAnalysisPerAllDataSet( const char * f
 		desiredOutputVector.resize( 32 );
 		for( i = 0; i < data.Size(); ++i )
 		{
-			this->ann.Run( data[i].GetInputPointer() );
-			currentSE = this->ann.GetSE( data[i].GetOutputPointer() );
+			this->ann.Run( data[i].GetInputPointer(), 0 );
+			currentSE = this->ann.GetSE( data[i].GetOutputPointer(), 0 );
 			for( j = 0; j < 32; ++j )
 				desiredOutputVector[j] = (long long)( data[i].GetOutputPointer()[j] * 10000.0f );
 			std::vector < float > & temp = dataSet[desiredOutputVector];
@@ -283,33 +314,142 @@ unsigned BackPropagation::CreateSquareErrorAnalysisPerAllDataSet( const char * f
 void BackPropagation::Init( sizetype layers, const sizetype * const neurons )
 {
 	this->ann.Init( layers, neurons );
-	this->AllocateArrays();
+	this->AllocateArrays( this->threadsCount );
 	this->currentEpoch = 0;
+}
+
+void BackPropagation::PreInit( sizetype threadsCount )
+{
+	this->threadsCount = threadsCount;
+	
+	this->threads.resize( this->threadsCount );
+	this->threadsInfo.resize( this->threadsCount );
+	
+	for( sizetype i = 0; i < this->threadsCount; ++i )
+	{
+		this->threadsInfo[i] = new BackPropagationThreadInfo;
+		this->threadsInfo[i]->threadsCount = this->threadsCount;
+		this->threadsInfo[i]->threadID = i;
+		this->threadsInfo[i]->backPropagation = this;
+		this->threadsInfo[i]->flags.store( 0 );
+		this->threadsInfo[i]->data.store( NULL );
+		
+		this->threads[i] = NULL;
+	}
+	
+	for( sizetype i = 0; i < this->threadsCount; ++i )
+	{
+		if( i != 0 )
+		{
+			this->threads[i] = new std::thread( BackPropagationThreadFunction, this->threadsInfo[i] );
+			this->threads[i]->detach();
+		}
+	}
+}
+
+void BackPropagation::ThreadFunction( sizetype threadID )
+{
+	this->ClearDeltaWeights( threadID );
+	
+	this->threadsInfo[threadID]->MSE = 0.0f;
+	
+	float * gradient_ = this->gradient[threadID];
+	float * deltaWeights_ = this->deltaWeights[threadID];
+	
+	const Data * data = (const Data*)(this->threadsInfo[threadID]->data.load());
+	
+	sizetype i;
+	float currentSE;
+	for( i = threadID; i < data->Size(); i += this->threadsCount )
+	{
+		this->ann.Run( data->operator[](i).GetInputPointer(), threadID );
+		currentSE = this->ann.GetSE( data->operator[](i).GetOutputPointer(), threadID );
+		this->threadsInfo[threadID]->MSE += currentSE;
+		
+		this->CalculateGradient( data->operator[](i).GetOutputPointer(), threadID );
+		this->UpdateDeltaWeights( gradient_, deltaWeights_, threadID );
+	}
+	
+	this->threadsInfo[threadID]->data.store( NULL );
+}
+
+void BackPropagationThreadFunction( BackPropagation::BackPropagationThreadInfo * threadInfo )
+{
+	while( true )
+	{
+		if( threadInfo->flags.load() & (1<<2) )
+		{
+			break;
+		}
+		else if( threadInfo->flags.load() & (1<<0) )
+		{
+			threadInfo->backPropagation->ThreadFunction( threadInfo->threadID );
+			threadInfo->flags.fetch_and( ~((unsigned)(1<<0)) );
+			threadInfo->flags.fetch_or( 1<<1 );
+		}
+		
+		std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+	}
+	threadInfo->flags.fetch_or( 1<<3 );
 }
 
 void BackPropagation::Destroy()
 {
+	// finish threads
+	{
+		for( int i = 1; i < this->threadsInfo.size(); ++i )
+			this->threadsInfo[i]->flags.fetch_or( 1<<2 );
+		
+		while( true )
+		{
+			std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+			int i;
+			for( i = 1; i < this->threadsInfo.size(); ++i )
+			{
+				if( this->threadsInfo[i]->flags.load() & (1<<3) == 0 )
+					break;
+			}
+			if( i == this->threadsInfo.size() )
+				break;
+		}
+		
+		for( int i = 1; i < this->threadsInfo.size(); ++i )
+			delete this->threadsInfo[i];
+		this->threadsInfo.clear();
+		this->threads.clear();
+	}
+	
+	threadsCount = 0;
 	TrainingStrategy::Destroy();
 	this->ann.Destroy();
-	Free( this->gradient );
-	Free( this->deltaWeights );
+	for( int i = 0; i < this->deltaWeights.size(); ++i )
+	{
+		if( this->deltaWeights[i] );
+			Free( this->deltaWeights[i] );
+	}
+	this->deltaWeights.clear();
+	
+	for( int i = 0; i < this->gradient.size(); ++i )
+	{
+		if( this->gradient[i] );
+			Free( this->gradient[i] );
+	}
+	this->gradient.clear();
+	
 	Free( this->prevDeltaWeights );
 	this->learningFactor = 0.01f;
-	this->gradient = nullptr;
-	this->deltaWeights = nullptr;
 	this->prevDeltaWeights = nullptr;
 	this->MSE = 0.0f;
 }
 
 BackPropagation::BackPropagation()
 {
+	threadsCount = 1;
 	learningFactorModifier = 0.997f;
 	modifyLearningFactorMaximallyOncePerEpochs = 100;
 	minWeight = -1500.0f;
 	maxWeight = 1500.0f;
 	learningFactor = 1.0f;
-	gradient = nullptr;
-	deltaWeights = nullptr;
 	prevDeltaWeights = nullptr;
 	MSE = 0.0f;
 }

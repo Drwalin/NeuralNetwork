@@ -25,6 +25,7 @@ private:
 	sizetype inputs;
 	sizetype outputs;
 	std::vector < DataSet > data;
+	sizetype datasize;
 	
 public:
 	

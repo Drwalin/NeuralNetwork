@@ -25,7 +25,7 @@ inline const DataSet & Data::operator [] ( sizetype id ) const
 
 inline sizetype Data::Size() const
 {
-	return this->data.size();
+	return datasize;
 }
 
 inline sizetype Data::GetInputs() const
@@ -40,7 +40,7 @@ inline sizetype Data::GetOutputs() const
 
 inline sizetype Data::DataSetsNumber() const
 {
-	return this->data.size();
+	return datasize;
 }
 
 #endif

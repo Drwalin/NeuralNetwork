@@ -28,6 +28,7 @@ void Data::JoinData( const Data & data )
 		for( i = prevsize; i < this->data.size(); ++i )
 			this->data[i] = data.data[i-prevsize];
 	}
+	this->datasize = this->data.size();
 }
 
 void Data::AddDataSet( const DataSet & dataSet )
@@ -43,6 +44,7 @@ void Data::AddDataSet( const DataSet & dataSet )
 	{
 		printf( "\n Error in Data::AddDataSet" );
 	}
+	this->datasize = this->data.size();
 }
 
 unsigned Data::AppendLoadDataSetsFromFile( const char * fileName )
@@ -61,11 +63,17 @@ unsigned Data::AppendLoadDataSetsFromFile( const char * fileName )
 			file >> outputs;
 			
 			if( inputs != this->inputs && this->inputs != 0 )
+			{
+				this->datasize = this->data.size();
 				return 4;
+			}
 			this->inputs = inputs;
 			
 			if( outputs != this->outputs && this->outputs != 0 )
+			{
+				this->datasize = this->data.size();
 				return 5;
+			}
 			this->outputs = outputs;
 			
 			file >> tests;
@@ -82,6 +90,7 @@ unsigned Data::AppendLoadDataSetsFromFile( const char * fileName )
 					file.close();
 					this->data.resize( i );
 					this->data.shrink_to_fit();
+					this->datasize = this->data.size();
 					return 3;
 				}
 				else if( this->data[i].GetInputs() != this->inputs || this->data[i].GetOutputs() != this->outputs )
@@ -96,20 +105,24 @@ unsigned Data::AppendLoadDataSetsFromFile( const char * fileName )
 			
 			file.close();
 			
+			this->datasize = this->data.size();
 			return 0;
 		}
 		else
 		{
+			this->datasize = this->data.size();
 			return 2;
 		}
 	}
 	
+	this->datasize = this->data.size();
 	return 1;
 }
 
 unsigned Data::LoadDataSetsFromFile( const char * fileName )
 {
 	this->Destroy();
+	this->datasize = this->data.size();
 	return this->AppendLoadDataSetsFromFile( fileName );
 }
 
@@ -132,7 +145,7 @@ unsigned Data::SaveDataSetsToFile( const char * fileName )
 				err = this->data[i].SaveToStandardStreamNoNumberOfInputsData( file );
 				if( err != 0 )
 				{
-					printf( "\n Saveing data sets to file stopped in iteration: %llu   with error: %llu ", i, err );
+					printf( "\n Saving data sets to file stopped in iteration: %llu   with error: %llu ", i, err );
 					file.close();
 					return 3;
 				}
@@ -164,6 +177,7 @@ void Data::RemoveInvalidDataSets()
 	}
 	
 	this->data.shrink_to_fit();
+	this->datasize = this->data.size();
 }
 
 void Data::SetInputsAndOutputs( sizetype inputs, sizetype outputs )
@@ -171,6 +185,7 @@ void Data::SetInputsAndOutputs( sizetype inputs, sizetype outputs )
 	this->inputs = inputs;
 	this->outputs = outputs;
 	this->RemoveInvalidDataSets();
+	this->datasize = this->data.size();
 }
 
 void Data::Destroy()
@@ -181,17 +196,20 @@ void Data::Destroy()
 	this->data.clear();
 	this->inputs = 0;
 	this->outputs = 0;
+	this->datasize = this->data.size();
 }
 
 Data::Data()
 {
 	inputs = 0;
 	outputs = 0;
+	this->datasize = this->data.size();
 }
 
 Data::~Data()
 {
 	Destroy();
+	this->datasize = this->data.size();
 }
 
 #endif

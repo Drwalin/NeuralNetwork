@@ -34,6 +34,7 @@ int main()
 	}
 	
 	BackPropagation training;
+	training.PreInit( 1 );
 	
 	sizetype neurons[] = { 2, 3, 1 };
 	
@@ -52,8 +53,8 @@ int main()
 		{
 			float in[2];
 			scanf( "%f%f", in, in+1 );
-			training.AccessMainNetwork().Run( in );
-			printf( "\n Output: %f ", *training.AccessMainNetwork().GetOutputs() );
+			training.AccessMainNetwork().Run( in, 0 );
+			printf( "\n Output: %f ", *training.AccessMainNetwork().GetOutputs(0) );
 			training.Train( dataSet, 100000, 0.00000001f, 100000 );
 		}
 		

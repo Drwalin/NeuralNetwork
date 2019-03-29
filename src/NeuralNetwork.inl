@@ -125,18 +125,19 @@ inline float NeuralNetwork::ActivationFunctionDerivative( float sum )
 	return 0.000001f;
 }
 
-inline void NeuralNetwork::CalculateNeuronOutput( sizetype layerId, sizetype id )		// id - neuronID
+inline void NeuralNetwork::CalculateNeuronOutput( sizetype layerId, sizetype id, sizetype outputsID )		// id - neuronID
 {
+	float * outputs = this->outputs[outputsID];
 	float sum = 0.0f;
 	float * weight = this->weights + this->weightsOffsetPerLayer[layerId] + ( ( this->neuronsPerLayers[layerId-1] + 1 ) * id );
-	float * input = this->outputs + this->outputsOffsetPerLayer[layerId-1];
+	float * input = outputs + this->outputsOffsetPerLayer[layerId-1];
 	float * endWeights = weight + this->neuronsPerLayers[layerId-1];
 	for( ; weight < endWeights; ++weight, ++input )
 	{
 		sum += (*weight) * (*input);
 	}
 	sum += *weight;
-	this->outputs[ this->outputsOffsetPerLayer[layerId] + id ] = NeuralNetwork::ActivationFunction( sum );
+	outputs[ this->outputsOffsetPerLayer[layerId] + id ] = NeuralNetwork::ActivationFunction( sum );
 }
 
 inline float& NeuralNetwork::AccessWeight( sizetype layer, sizetype neuron, sizetype weightID )
@@ -152,13 +153,13 @@ inline float& NeuralNetwork::AccessWeight( sizetype layer, sizetype neuron, size
 	return NeuralNetwork::FREE_ACCESS_FOR_INVALID_NETWORKS;
 }
 
-inline float& NeuralNetwork::AccessOutput( sizetype layer, sizetype neuron )
+inline float& NeuralNetwork::AccessOutput( sizetype layer, sizetype neuron, sizetype outputsID )
 {
 #ifdef CHECK_VALIDITY
 	if( this->IsValid() && layer < this->layers && layer && neuron < this->neuronsPerLayers[layer] )
 #endif
 	{
-		return this->outputs[ this->outputsOffsetPerLayer[layer] + neuron ];
+		return this->outputs[outputsID][ this->outputsOffsetPerLayer[layer] + neuron ];
 	}
 	
 	printf( "\n return NeuralNetwork::FREE_ACCESS_FOR_INVALID_NETWORKS;" );
@@ -166,13 +167,14 @@ inline float& NeuralNetwork::AccessOutput( sizetype layer, sizetype neuron )
 	return NeuralNetwork::FREE_ACCESS_FOR_INVALID_NETWORKS;
 }
 
-inline float NeuralNetwork::GetSE( const float * desiredOutput ) const
+inline float NeuralNetwork::GetSE( const float * desiredOutput, sizetype outputsID ) const
 {
+	float * outputs = this->outputs[outputsID];
 	if( this->IsValid() && desiredOutput && this->neuronsPerLayers[this->layers-1] )
 	{
 		float ret = 0.0f;
 		float * dst = (float*)desiredOutput;
-		float * out = this->outputs + this->outputsOffsetPerLayer[this->layers-1];
+		float * out = outputs + this->outputsOffsetPerLayer[this->layers-1];
 		float * endOut = out + this->neuronsPerLayers[this->layers-1];
 		for( ; out < endOut; ++out, ++dst )
 		{

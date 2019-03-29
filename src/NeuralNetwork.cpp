@@ -33,11 +33,21 @@ bool NeuralNetwork::IsValid() const
 		printf( "\n NeuralNetwork is not valid: weights" );
 		return false;
 	}
-	if( this->outputs == nullptr )
+	
+	if( this->outputs.size() == 0 )
 	{
-		printf( "\n NeuralNetwork is not valid: outputs" );
+		printf( "\n NeuralNetwork is not valid: outputs size equal null" );
 		return false;
 	}
+	for( int i = 0; i < this->outputs.size(); ++i )
+	{
+		if( this->outputs[i] == nullptr )
+		{
+			printf( "\n NeuralNetwork is not valid: outputs[%i]", i );
+			return false;
+		}
+	}
+	
 	if( this->neuronsPerLayers == nullptr )
 	{
 		printf( "\n NeuralNetwork is not valid: neuronsPerLayers" );
@@ -56,24 +66,31 @@ bool NeuralNetwork::IsValid() const
 	return true;
 }
 
-void NeuralNetwork::Run( const float * inputs )
+void NeuralNetwork::Run( const float * inputs, sizetype outputsID )
 {
+	while( this->outputs.size() <= outputsID )
+	{
+		this->outputs.resize( this->outputs.size() + 1 );
+		this->outputs.back() = Alloc<float>( this->allNeurons );
+	}
+	
+	float * outputs = this->outputs[outputsID];
 	if( this->IsValid() && inputs )
 	{
 		sizetype i, j;
 		for( i = 0; i < *this->neuronsPerLayers; ++i )
-			this->outputs[i] = inputs[i];
+			outputs[i] = inputs[i];
 		
 		for( i = 1; i < this->layers; ++i )
 			for( j = 0; j < this->neuronsPerLayers[i]; ++j )
-				this->CalculateNeuronOutput( i, j );
+				this->CalculateNeuronOutput( i, j, outputsID );
 	}
 }
 
-float * NeuralNetwork::GetOutputs()
+float * NeuralNetwork::GetOutputs( sizetype outputsID )
 {
 	if( this->IsValid() )
-		return this->outputs + this->outputsOffsetPerLayer[ this->layers-1 ];
+		return this->outputs[outputsID] + this->outputsOffsetPerLayer[ this->layers-1 ];
 	return nullptr;
 }
 
@@ -128,11 +145,12 @@ unsigned NeuralNetwork::Init( sizetype layers, const sizetype * const neurons )
 		}
 		
 		this->weights = Alloc<float>( this->allWeights );
-		this->outputs = Alloc<float>( this->allNeurons );
+		this->outputs.resize( 1 );
+		this->outputs.back() = Alloc<float>( this->allNeurons );
 		assert( this->weights );
-		assert( this->outputs );
+		assert( this->outputs.back() );
 		memset( this->weights, 0, this->allWeights * sizeof( float ) );
-		memset( this->outputs, 0, this->allNeurons * sizeof( float ) );
+		memset( this->outputs.back(), 0, this->allNeurons * sizeof( float ) );
 		
 		this->weightsOffsetPerLayer = Alloc<sizetype>( layers );
 		this->outputsOffsetPerLayer = Alloc<sizetype>( layers );
@@ -218,11 +236,13 @@ unsigned NeuralNetwork::LoadFromStandardStream( std::istream & stream )
 	this->neuronsPerLayers = Alloc<sizetype>( this->layers );
 	assert( this->neuronsPerLayers );
 	
+	this->outputs.resize( 1 );
+	
 	this->weights = Alloc<float>( this->allWeights );
-	this->outputs = Alloc<float>( this->allNeurons );
+	this->outputs.back() = Alloc<float>( this->allNeurons );
 	assert( this->weights );
-	assert( this->outputs );
-	memset( this->outputs, 0, this->allNeurons * sizeof( float ) );
+	assert( this->outputs.back() );
+	memset( this->outputs.back(), 0, this->allNeurons * sizeof( float ) );
 	
 	this->weightsOffsetPerLayer = Alloc<sizetype>( this->layers );
 	this->outputsOffsetPerLayer = Alloc<sizetype>( this->layers );
@@ -291,14 +311,15 @@ unsigned NeuralNetwork::SaveToStandardStream( std::ostream & stream ) const
 void NeuralNetwork::Destroy()
 {
 	Free( this->weights );
-	Free( this->outputs );
+	for( int i = 0; i < this->outputs.size(); ++i )
+		Free( this->outputs[i] );
 	
 	Free( this->neuronsPerLayers );
 	Free( this->weightsOffsetPerLayer );
 	Free( this->outputsOffsetPerLayer );
 	
 	this->weights = nullptr;
-	this->outputs = nullptr;
+	this->outputs.clear();
 	
 	this->neuronsPerLayers = nullptr;
 	this->layers = 0;
@@ -312,7 +333,6 @@ void NeuralNetwork::Destroy()
 NeuralNetwork::NeuralNetwork()
 {
 	this->weights = nullptr;
-	this->outputs = nullptr;
 	
 	this->neuronsPerLayers = nullptr;
 	this->layers = 0;

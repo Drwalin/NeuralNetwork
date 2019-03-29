@@ -14,6 +14,7 @@
 #define NEURAL_NETWORK_H
 
 #include <iostream>
+#include <vector>
 
 #include "DataSet.h"
 #include "Data.h"
@@ -26,7 +27,7 @@ protected:
 	static float FREE_ACCESS_FOR_INVALID_NETWORKS;
 	
 	float * weights;
-	float * outputs;
+	std::vector < float* > outputs;
 	
 	sizetype * neuronsPerLayers;		// [0] - number of inputs ; [layers-1] - number of outputs
 	sizetype layers;
@@ -54,15 +55,15 @@ public:
 	
 	static inline float ActivationFunction( float sum );
 	static inline float ActivationFunctionDerivative( float sum );
-	inline void CalculateNeuronOutput( sizetype layerId, sizetype id );
+	inline void CalculateNeuronOutput( sizetype layerId, sizetype id, sizetype outputsID );
 	
-	void Run( const float * inputs );
-	float * GetOutputs();
-	inline float GetSE( const float * desiredOutput ) const;		// return square error of output
+	void Run( const float * inputs, sizetype outputsID );
+	float * GetOutputs( sizetype outputsID );
+	inline float GetSE( const float * desiredOutput, sizetype outputsID ) const;		// return square error of output
 	
 	// weight( layer, neuron, neuronsPerLayers[layer-1] ) = bias
 	inline float& AccessWeight( sizetype layer, sizetype neuron, sizetype weightID );
-	inline float& AccessOutput( sizetype layer, sizetype neuron );
+	inline float& AccessOutput( sizetype layer, sizetype neuron, sizetype outputsID );
 	
 	void Randomize( float max, float deviation );
 	void InitRandom( float max = 30.0f, float deviation = 1.0f );

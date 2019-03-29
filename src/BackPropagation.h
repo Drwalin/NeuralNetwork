@@ -13,18 +13,43 @@
 #ifndef BACK_PROPAGATION_H
 #define BACK_PROPAGATION_H
 
+#include <vector>
+#include <thread>
+#include <atomic>
+
 #include "TrainingStrategy.h"
+
 
 class BackPropagation : public TrainingStrategy
 {
 public://private:
 	
+	class BackPropagationThreadInfo
+	{
+	public:
+		
+		std::atomic<void*> data;
+		float MSE;
+		sizetype threadsCount;
+		sizetype threadID;
+		BackPropagation * backPropagation;
+		std::atomic<unsigned> flags;
+		/*
+			flags:
+				[0] - queue compute
+				[1] - ended computing
+				
+				[2] - queue end
+				[3] - ended
+		*/
+	};
+	
 	NeuralNetwork ann;
 	
 	float learningFactor;
 	
-	float * gradient;			// one per neuron
-	float * deltaWeights;		// one per weight and bias
+	std::vector < float* > gradient;			// one per neuron
+	std::vector < float* > deltaWeights;		// one per weight and bias
 	float * prevDeltaWeights;
 	
 	float MSE;
@@ -40,7 +65,13 @@ public://private:
 	virtual unsigned LoadTrainingData( std::istream & stream ) override;
 	virtual unsigned SaveTrainingData( std::ostream & stream ) const override;
 	
+	sizetype threadsCount;
+	std::vector < std::thread* > threads;
+	std::vector < BackPropagationThreadInfo* > threadsInfo;
+	
 public:
+	
+	void ThreadFunction( sizetype threadID );
 	
 	float GetLearningFactor() const;
 	
@@ -59,31 +90,35 @@ public:
 	
 	virtual void TrainOneEpoch( const Data & data ) override;
 	
-	void AllocateArrays();
+	void AllocateArrays( sizetype arraysCount );
 	
 	virtual float GetCurrentError() const override;
 	float GetMSE() const;
 	
-	inline float * AccessGradient( sizetype layer, sizetype neuron );		// assume: layer > 0
-	inline float * AccessDeltaWeights( sizetype layer, sizetype neuron, sizetype id );
+	inline float * AccessGradient( sizetype layer, sizetype neuron, float * gradient );		// assume: layer > 0
+	inline float * AccessDeltaWeights( sizetype layer, sizetype neuron, sizetype id, float * deltaWeights );
 	
-	inline void CalculateOutputNeuronGradient( sizetype layer, sizetype neuron, float * desiredOutput );
-	inline void CalculateHiddenNeuronGradient( sizetype layer, sizetype neuron );
+	inline void CalculateOutputNeuronGradient( sizetype layer, sizetype neuron, float * desiredOutput, float * gradient, sizetype threadID );
+	inline void CalculateHiddenNeuronGradient( sizetype layer, sizetype neuron, float * gradient_, sizetype threadID );
 	inline void UpdateWeight( sizetype layer, sizetype neuron );
-	inline void UpdateDeltaWeight( sizetype layer, sizetype neuron );
+	inline void UpdateDeltaWeight( sizetype layer, sizetype neuron, float * gradient_, float * deltaWeights_, sizetype threadID );
 	
-	void ClearDeltaWeights();
-	void UpdateDeltaWeights();
-	void CalculateGradient( float * desiredOutput );
+	void ClearDeltaWeights( sizetype threadID );
+	void UpdateDeltaWeights( float * gradient_, float * deltaWeights_, sizetype threadID );
+	void CalculateGradient( float * desiredOutput, sizetype threadID );
 	void UpdateWeights( sizetype numberOfTrainedDataSets );
 	
 	void Init( sizetype layers, const sizetype * const neurons );
+	
+	void PreInit( sizetype threadsCount = 1 );
 	
 	virtual void Destroy() override;
 	
 	BackPropagation();
 	~BackPropagation();
 };
+
+void BackPropagationThreadFunction( BackPropagation::BackPropagationThreadInfo * threadInfo );
 
 #include "BackPropagation.inl"
 

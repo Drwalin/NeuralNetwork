@@ -34,19 +34,19 @@ inline void BackPropagation::SetMinMaxWeights( float min, float max )
 	this->maxWeight = max;
 }
 
-inline float * BackPropagation::AccessGradient( sizetype layer, sizetype neuron )
+inline float * BackPropagation::AccessGradient( sizetype layer, sizetype neuron, float * gradient )
 {
-	return this->gradient + this->ann.outputsOffsetPerLayer[ layer ] + neuron - this->ann.neuronsPerLayers[0];
+	return gradient + this->ann.outputsOffsetPerLayer[ layer ] + neuron - this->ann.neuronsPerLayers[0];
 }
 
-inline float * BackPropagation::AccessDeltaWeights( sizetype layer, sizetype neuron, sizetype id )
+inline float * BackPropagation::AccessDeltaWeights( sizetype layer, sizetype neuron, sizetype id, float * deltaWeights )
 {
-	return this->deltaWeights + this->ann.weightsOffsetPerLayer[layer] + ( ( this->ann.neuronsPerLayers[layer-1] + 1 ) * neuron ) + id;
+	return deltaWeights + this->ann.weightsOffsetPerLayer[layer] + ( ( this->ann.neuronsPerLayers[layer-1] + 1 ) * neuron ) + id;
 }
 
-inline void BackPropagation::CalculateOutputNeuronGradient( sizetype layer, sizetype neuron, float * desiredOutput )
+inline void BackPropagation::CalculateOutputNeuronGradient( sizetype layer, sizetype neuron, float * desiredOutput, float * gradient, sizetype threadID )
 {
-	float output = this->ann.AccessOutput( layer, neuron );
+	float output = this->ann.AccessOutput( layer, neuron, threadID );
 	
 	//without optimization:
 	//*this->AccessGradient( layer, neuron ) = 2.0f * ( output - desiredOutput[neuron] ) * output * ( 1.0f - output );
@@ -54,14 +54,14 @@ inline void BackPropagation::CalculateOutputNeuronGradient( sizetype layer, size
 	//                                         Contained in learningFactor
 	
 	//with optimization:
-	*this->AccessGradient( layer, neuron ) = ( output - desiredOutput[neuron] ) * output * ( 1.0f - output );
+	*this->AccessGradient( layer, neuron, gradient ) = ( output - desiredOutput[neuron] ) * output * ( 1.0f - output );
 }
 
-inline void BackPropagation::CalculateHiddenNeuronGradient( sizetype layer, sizetype neuron )
+inline void BackPropagation::CalculateHiddenNeuronGradient( sizetype layer, sizetype neuron, float * gradient_, sizetype threadID )
 {
-	float * gradient = this->AccessGradient( layer, neuron );
+	float * gradient = this->AccessGradient( layer, neuron, gradient_ );
 	float * weight = &(this->ann.AccessWeight( layer+1, 0, neuron ));
-	float * inGradient = this->AccessGradient( layer+1, 0 );
+	float * inGradient = this->AccessGradient( layer+1, 0, gradient_ );
 	
 	*gradient = 0.0f;
 	
@@ -72,15 +72,15 @@ inline void BackPropagation::CalculateHiddenNeuronGradient( sizetype layer, size
 	for( i = 0; i < iterations; ++i, weight += weightModifier, ++inGradient )
 		*gradient += (*weight) * (*inGradient);
 	
-	float output = this->ann.AccessOutput( layer, neuron );
+	float output = this->ann.AccessOutput( layer, neuron, threadID );
 	*gradient *= output * ( 1.0f - output );
 }
 
-inline void BackPropagation::UpdateDeltaWeight( sizetype layer, sizetype neuron )
+inline void BackPropagation::UpdateDeltaWeight( sizetype layer, sizetype neuron, float * gradient_, float * deltaWeights_, sizetype threadID )
 {
-	float gradient = *this->AccessGradient( layer, neuron );
-	float * deltaWeight = this->AccessDeltaWeights( layer, neuron, 0 );
-	float * input = &(this->ann.AccessOutput( layer-1, 0 ));
+	float gradient = *this->AccessGradient( layer, neuron, gradient_ );
+	float * deltaWeight = this->AccessDeltaWeights( layer, neuron, 0, deltaWeights_ );
+	float * input = &(this->ann.AccessOutput( layer-1, 0, threadID ));
 	float sum = 0.0f;
 	
 	sizetype i;
