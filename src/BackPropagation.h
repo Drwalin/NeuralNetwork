@@ -16,6 +16,7 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <random>
 
 #include "TrainingStrategy.h"
 
@@ -27,7 +28,6 @@ public://private:
 	class BackPropagationThreadInfo
 	{
 	public:
-		
 		std::atomic<void*> data;
 		float MSE;
 		sizetype threadsCount;
@@ -41,8 +41,21 @@ public://private:
 				
 				[2] - queue end
 				[3] - ended
+				
+				[4] - weights updated (used only in batch mode)
 		*/
+		
+		std::default_random_engine generator;
+		std::uniform_int_distribution<sizetype> distribution;
+		
+		sizetype Random();
+		BackPropagationThreadInfo( sizetype threadID );
+		void InitDistribution( sizetype dataSetSize );
 	};
+	
+	std::atomic<sizetype> currentDataSetCount;
+	std::atomic<sizetype> currentBatchCount;
+	sizetype batchSize;
 	
 	NeuralNetwork ann;
 	
@@ -69,9 +82,13 @@ public://private:
 	std::vector < std::thread* > threads;
 	std::vector < BackPropagationThreadInfo* > threadsInfo;
 	
+	const DataSet * GetNextRandomDataSet( const Data * data, sizetype threadID );
+	
 public:
 	
 	void ThreadFunction( sizetype threadID );
+	void ThreadFunctionBatch( sizetype threadID );
+	void ThreadFunctionWeightsUpdateBatch( sizetype threadID );
 	
 	float GetLearningFactor() const;
 	
@@ -106,8 +123,9 @@ public:
 	void ClearDeltaWeights( sizetype threadID );
 	void UpdateDeltaWeights( float * gradient_, float * deltaWeights_, sizetype threadID );
 	void CalculateGradient( float * desiredOutput, sizetype threadID );
-	void UpdateWeights( sizetype numberOfTrainedDataSets );
+	void UpdateWeights( sizetype numberOfTrainedDataSets, sizetype threadsCount, sizetype threadID );
 	
+	void SetBatchSize( sizetype batch );
 	void Init( sizetype layers, const sizetype * const neurons );
 	
 	void PreInit( sizetype threadsCount = 1 );

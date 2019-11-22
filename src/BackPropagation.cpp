@@ -19,6 +19,21 @@
 #include <vector>
 #include <fstream>
 
+sizetype BackPropagation::BackPropagationThreadInfo::Random()
+{
+	return this->distribution( this->generator );
+}
+
+void BackPropagation::BackPropagationThreadInfo::InitDistribution( sizetype dataSetSize )
+{
+	this->distribution = std::uniform_int_distribution<sizetype>(0,dataSetSize-1);
+}
+
+BackPropagation::BackPropagationThreadInfo::BackPropagationThreadInfo( sizetype threadID )
+{
+	this->generator = std::default_random_engine( ( rand() ^ threadID ) * threadID + threadID ^ (sizetype)this );
+}
+
 float BackPropagation::GetLearningFactor() const
 {
 	return this->learningFactor;
@@ -87,54 +102,117 @@ bool BackPropagation::IsValid() const
 
 void BackPropagation::TrainOneEpoch( const Data & data )
 {
-	this->MSE = 0.0f;
 	if( this->IsValid() )
 	{
 		if( this->ann.IsDataValid( data ) )
 		{
-			// begin threads
-			for( sizetype i = 0; i < this->threadsInfo.size(); ++i )
-				this->threadsInfo[i]->data.store( (void*)(&data) );
-			for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
-				this->threadsInfo[i]->flags.fetch_or( 1<<0 );
-			
-			this->ThreadFunction( 0 );
-			this->MSE = this->threadsInfo[0]->MSE;
-			
-			// end threads
-			for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
+			if( this->batchSize == 0 )
 			{
-				while( ( this->threadsInfo[i]->flags.load() & (1<<1) == 0 ) || ( this->threadsInfo[i]->flags.load() & (1<<0) == 1 ) )
-					std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+				// begin threads
+				for( sizetype i = 0; i < this->threadsInfo.size(); ++i )
+					this->threadsInfo[i]->data.store( (void*)(&data) );
+				for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
+					this->threadsInfo[i]->flags.fetch_or( 1<<0 );
 				
-				this->threadsInfo[i]->flags.store( 0 );
-				this->MSE += this->threadsInfo[i]->MSE;
-				float * src = this->deltaWeights[i];
-				float * dst = this->deltaWeights[0];
-				for( sizetype j = 0; j < this->ann.allWeights; ++j, ++src, ++dst )
-					*dst += *src;
-			}
-			
-			if( data.Size() )
-			{
-				this->MSE /= float( data.Size() );
+				this->ThreadFunction( 0 );
+				this->MSE = this->threadsInfo[0]->MSE;
 				
-				static sizetype learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
-				if( this->MSE >= this->prevMSE )
+				// end threads
+				for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
 				{
-					if( learnFactorModifyCooldown < this->currentEpoch )
+					while( ( this->threadsInfo[i]->flags.load() & (1<<1) == 0 ) || ( this->threadsInfo[i]->flags.load() & (1<<0) == 1 ) )
+						std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+					
+					this->threadsInfo[i]->flags.store( 0 );
+					this->MSE += this->threadsInfo[i]->MSE;
+					float * src = this->deltaWeights[i];
+					float * dst = this->deltaWeights[0];
+					for( sizetype j = 0; j < this->ann.allWeights; ++j, ++src, ++dst )
+						*dst += *src;
+				}
+				
+				if( data.Size() )
+				{
+					this->MSE /= float( data.Size() );
+					
+					static sizetype learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
+					if( this->MSE >= this->prevMSE )
 					{
-						this->learningFactor *= learningFactorModifier;
-						learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
+						if( learnFactorModifyCooldown < this->currentEpoch )
+						{
+							this->learningFactor *= learningFactorModifier;
+							learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
+						}
+					}
+					
+					this->prevMSE = this->MSE;
+					
+					if( this->learningFactor < 0.01f )
+						this->learningFactor = 0.01f;
+					
+					this->UpdateWeights( data.Size(), 1, 0 );
+				}
+			}
+			else
+			{
+				for( sizetype i = 0; i < this->threadsInfo.size(); ++i )
+				{
+					this->threadsInfo[i]->MSE = 0.0f;
+					this->threadsInfo[i]->data.store( (void*)(&data) );
+					this->threadsInfo[i]->InitDistribution( data.Size() );
+				}
+				this->currentDataSetCount.store( 0 );
+				while( this->currentDataSetCount.load() < data.Size() )
+				{
+					this->currentBatchCount.store( 0 );
+					// begin threads
+					for( sizetype i = 0; i < this->threadsInfo.size(); ++i )
+					{
+						this->threadsInfo[i]->flags.store( 0 );
+						this->threadsInfo[i]->flags.fetch_or( 1<<0 );
+					}
+					
+					this->ThreadFunctionBatch( 0 );
+					
+					this->threadsInfo[0]->flags.fetch_and( ~((unsigned)(1<<0)) );
+					this->threadsInfo[0]->flags.fetch_or( 1<<1 );
+					
+					this->ThreadFunctionWeightsUpdateBatch( 0 );
+					
+					
+					for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
+					{
+						while( this->threadsInfo[i]->flags.load() & (1<<4) == 0 )
+							std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+						this->threadsInfo[i]->flags.store( 0 );
 					}
 				}
 				
-				this->prevMSE = this->MSE;
+				this->MSE = this->threadsInfo[0]->MSE;
 				
-				if( this->learningFactor < 0.01f )
-					this->learningFactor = 0.01f;
+				// end threads
+				for( sizetype i = 1; i < this->threadsInfo.size(); ++i )
+					this->MSE += this->threadsInfo[i]->MSE;
 				
-				this->UpdateWeights( data.Size() );
+				if( data.Size() )
+				{
+					this->MSE /= float( data.Size() );
+					
+					static sizetype learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
+					if( this->MSE >= this->prevMSE )
+					{
+						if( learnFactorModifyCooldown < this->currentEpoch )
+						{
+							this->learningFactor *= learningFactorModifier;
+							learnFactorModifyCooldown = this->currentEpoch + this->modifyLearningFactorMaximallyOncePerEpochs;
+						}
+					}
+					
+					this->prevMSE = this->MSE;
+					
+					if( this->learningFactor < 0.01f )
+						this->learningFactor = 0.01f;
+				}
 			}
 		}
 	}
@@ -181,15 +259,19 @@ void BackPropagation::ClearDeltaWeights( sizetype threadID )
 	}
 }
 
-void BackPropagation::UpdateWeights( sizetype numberOfTrainedDataSets )
+void BackPropagation::UpdateWeights( sizetype numberOfTrainedDataSets, sizetype threadsCount, sizetype threadID )
 {
 	if( this->IsValid() )
 	{
-		float * weight = this->ann.weights;
-		float * deltaWeights = this->deltaWeights[0];
-		for( int i = 0; i < this->ann.allWeights; ++i, ++weight, ++deltaWeights )
+		float * weight = this->ann.weights + threadID;
+		for( int i = threadID; i < this->ann.allWeights; i+=threadsCount, weight+=threadsCount )
 		{
-			float delta = this->learningFactor * (*deltaWeights) / float(numberOfTrainedDataSets);
+			float delta = 0.0f;
+			for( int j=0; j<this->threadsCount; ++j )
+				delta += this->deltaWeights[j][i];
+			
+			delta = this->learningFactor * delta / float(numberOfTrainedDataSets);
+			
 			if( delta <= -1.0f )
 				delta = -1.0f;
 			else if( delta >= 1.0f )
@@ -311,11 +393,19 @@ unsigned BackPropagation::CreateSquareErrorAnalysisPerAllDataSet( const char * f
 	return 1;
 }
 
+void BackPropagation::SetBatchSize( sizetype batch )
+{
+	this->batchSize = batch;
+	if( this->batchSize < 0 )
+		this->batchSize = 0;
+}
+
 void BackPropagation::Init( sizetype layers, const sizetype * const neurons )
 {
 	this->ann.Init( layers, neurons );
 	this->AllocateArrays( this->threadsCount );
 	this->currentEpoch = 0;
+	this->batchSize = 0;
 }
 
 void BackPropagation::PreInit( sizetype threadsCount )
@@ -327,9 +417,8 @@ void BackPropagation::PreInit( sizetype threadsCount )
 	
 	for( sizetype i = 0; i < this->threadsCount; ++i )
 	{
-		this->threadsInfo[i] = new BackPropagationThreadInfo;
+		this->threadsInfo[i] = new BackPropagationThreadInfo( i );
 		this->threadsInfo[i]->threadsCount = this->threadsCount;
-		this->threadsInfo[i]->threadID = i;
 		this->threadsInfo[i]->backPropagation = this;
 		this->threadsInfo[i]->flags.store( 0 );
 		this->threadsInfo[i]->data.store( NULL );
@@ -373,6 +462,46 @@ void BackPropagation::ThreadFunction( sizetype threadID )
 	this->threadsInfo[threadID]->data.store( NULL );
 }
 
+void BackPropagation::ThreadFunctionBatch( sizetype threadID )
+{
+	this->ClearDeltaWeights( threadID );
+	
+	float * gradient_ = this->gradient[threadID];
+	float * deltaWeights_ = this->deltaWeights[threadID];
+	
+	const Data * data = (const Data*)(this->threadsInfo[threadID]->data.load());
+	
+	float currentSE;
+	for( ; (this->currentBatchCount++) < this->batchSize; )
+	{
+		const DataSet * const dataSet = GetNextRandomDataSet( data, threadID );
+		this->ann.Run( dataSet->GetInputPointer(), threadID );
+		currentSE = this->ann.GetSE( dataSet->GetOutputPointer(), threadID );
+		this->threadsInfo[threadID]->MSE += currentSE;
+		
+		this->CalculateGradient( dataSet->GetOutputPointer(), threadID );
+		this->UpdateDeltaWeights( gradient_, deltaWeights_, threadID );
+	}
+}
+
+void BackPropagation::ThreadFunctionWeightsUpdateBatch( sizetype threadID )
+{
+	sizetype i;
+	for( i=0; i < this->threadsInfo.size(); ++i )
+		while( !(this->threadsInfo[i]->flags.load() & (1<<1)) )
+			std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+	const Data * data = (const Data*)(this->threadsInfo[threadID]->data.load());
+	this->UpdateWeights( data->Size(), this->threadsCount, threadID );
+	this->threadsInfo[threadID]->flags.fetch_or( 1<<4 );
+}
+
+const DataSet * BackPropagation::GetNextRandomDataSet( const Data * data, sizetype threadID )
+{
+	sizetype r = this->threadsInfo[threadID]->Random();
+	this->currentDataSetCount++;
+	return &(data->operator[](r%(data->Size())));
+}
+
 void BackPropagationThreadFunction( BackPropagation::BackPropagationThreadInfo * threadInfo )
 {
 	while( true )
@@ -383,9 +512,14 @@ void BackPropagationThreadFunction( BackPropagation::BackPropagationThreadInfo *
 		}
 		else if( threadInfo->flags.load() & (1<<0) )
 		{
-			threadInfo->backPropagation->ThreadFunction( threadInfo->threadID );
+			if( threadInfo->backPropagation->batchSize == 0 )
+				threadInfo->backPropagation->ThreadFunction( threadInfo->threadID );
+			else
+				threadInfo->backPropagation->ThreadFunctionBatch( threadInfo->threadID );
 			threadInfo->flags.fetch_and( ~((unsigned)(1<<0)) );
 			threadInfo->flags.fetch_or( 1<<1 );
+			if( threadInfo->backPropagation->batchSize != 0 )
+				threadInfo->backPropagation->ThreadFunctionWeightsUpdateBatch( threadInfo->threadID );
 		}
 		
 		std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );

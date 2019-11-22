@@ -41,6 +41,7 @@ int main()
 	for( i = 0; i < 1000000; ++i )
 	{
 		training.Init( 3, neurons );
+		training.SetBatchSize( 4 );
 		
 		training.AccessMainNetwork().InitRandom();
 		
@@ -55,7 +56,7 @@ int main()
 			scanf( "%f%f", in, in+1 );
 			training.AccessMainNetwork().Run( in, 0 );
 			printf( "\n Output: %f ", *training.AccessMainNetwork().GetOutputs(0) );
-			training.Train( dataSet, 100000, 0.00000001f, 100000 );
+			training.Train( dataSet, 100000, 0.00000001f, 10000 );
 		}
 		
 		training.Destroy();
