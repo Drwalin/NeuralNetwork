@@ -1,0 +1,302 @@
+\documentclass[]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{fullpage} %usuwa duże marginesy 
+%\usepackage{polski}
+\usepackage[polish]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx} % dodawanie zdjęć, obrazków
+\usepackage{enumerate} % numerowanie, punktowanie itp itd
+\usepackage{authblk} % Dodatki do strony tytułowej affil, author itp itd
+\usepackage{dsfont}
+\usepackage{gensymb} % Ułatwione wpisywanie jednostek \celsius, \degree, \ohm itp
+\usepackage{caption} 
+%\usepackage{subfig} % umieszczanie dwóch lub więcej obrazków w jednym obiekcie typu figure 
+\usepackage{float} %Pozycjonowanie obiektów typu figure, table [ht] itp 
+\usepackage{amsmath} %Obiekty typu matematycznego align, equation ftp://ftp.ams.org/ams/doc/amsmath/amsldoc.pdf
+\usepackage{physics} %fizyczna składnia https://mirror.hmc.edu/ctan/macros/latex/contrib/physics/physics.pdf
+\usepackage[colorlinks,citecolor=black,urlcolor=black, linkcolor=black]{hyperref} %wstawianie linków i nie tylko
+\usepackage{indentfirst} %akapit
+% Po dokładniejsze informacje na temat pakietów odsyłam najlepiej do oficjalnych dokumentacji, znajdziecie w googlu.
+\usepackage{braket} %notacja Diraca
+\let\lll\undefined
+\usepackage{amssymb}
+
+%opening
+\title{Sieci neuronowe}
+\author{Marek Zalewski aka Drwalin}
+
+\begin{document}
+
+\maketitle
+
+\newpage
+\begin{abstract}
+	Krótki opis działania i uczenia sieci metodą wstecznej propagacji błędu sieci neuronowej ukierunkowanej nierekurencyjnej, gdzie wszystkie neurony jednej warstwy są połączone z wszystkimi neuronami warstw sąsiednich. \\
+	Opis sieci ukierunkowanej nierekurencyjnej bez pełnego połączenia pomiędzy warstwami i z połączeniami pomiędzy neuronami dowolnych warstw (poza daną jedną warstwą)
+	Opis pomysłu uczenia sieci neuronowej metodą genetyczną wspomaganą metodą kar i nagród (bez wykorzystania wstecznej propagacji błędu).
+\end{abstract}
+
+\newpage
+\parindent 1em%
+\tableofcontents
+
+\newpage
+\section{Wykaz zmiennych i funkcji}
+	\subsection{Wykaz zmiennych}
+		\begin{tabular}{rcl}
+			$ L $ &-& ilość warstw sieci neuronowej \\
+			$ N_{l} $ &-& ilość neuronów na l-tej warstwie \\
+			$ \omega $ &-& zbiór wszystkich wag i biasów \\
+			$ \omega_{l,n,i} $ &-& i-ta waga n-tego neuronu na l-tej warstwie \\
+			$ \omega_{l,n} $ &-& zbiór wag i biasu n-tego neuronu na l-tej warstwie \\
+			$ \omega_{l} $ &-& zbiór wag i biasów neuronów l-tej warstwy \\
+			$ \beta_{l,n} $ &-& bias n-tego neuronu na l-tej warstwie \\
+			$ a $ &-& pojedyńczy zbiór wejść sieci \\
+			$ S_{l,n} $ &-& suma ważona wejść neuronu n na warstwie l \\
+			$ s_{i} $ &-& i-te wejście sieci neuronowej \\
+			$ t_{i} $ &-& i-te wyjście docelowe sieci neuronowej \\
+			$ a_{l,n} $ &-& wyjście n-tego neuronu l-tej warstwy \\
+			$ a_{0,n} $ &$=$& $ s_{n} $ \\
+			$ a_{L-1,n} $ &-& n-te wyjście sieci \\
+			$ a_{l} $ &-& zbiór wyjść neuronów na l-tej warstwie \\
+			$ \alpha $ &-& współczynnik prędkości uczenia sieci \\
+			$ A $ &-& zbiór wejść zestawów uczących \\
+			$ T $ &-& zbiór wyjść oczekiwanych zestawów uczących \\
+			$ \Delta\omega_{l,n,i} $ &-& zmiana wagi $\omega_{l,n,i}$ do poprawienia aktualnego wyniku \\
+			$ \Delta\beta_{l,n} $ &-& zmiana biasu $\beta_{l,n}$ do poprawienia aktualnego wyniku \\
+			$ W $ &-& wektor wag i biasów \\
+			$ \Delta W $ &-& wektor zmian wag i biasów \\
+			$ g_{l,n} $ &-& gradient dla biasu n-tego neuronu l-tej warstwy \\
+			$ g_{l,n,i} $ &-& gradient dla wagi n-tego neuronu l-tej warstwy \\
+		\end{tabular}
+	
+	\subsection{Wykaz funkcji}
+		\begin{tabular}{rcl}
+			$ S_{l,n}\left( a_{l-1}, \omega_{l} \right) $ &-& funkcja sumy ważonej wejść n-tego neuronu l-tej warstwy \\
+			$ a_{l,n}\left( a_{l-1}, \omega_{l} \right) $ &-& funkcja wyjscia neuronu \\
+			$ \sigma\left(x\right) $ &-& funkcja aktywacji neuronu \\
+			$ \varepsilon \left( a_{l-1,n}, t_{i} \right) $ &-& funkcja błędu standardowego sieci \\
+		\end{tabular}
+
+\newpage
+\section{Obliczanie wyjścia sieci}
+	\subsection{Funkcja aktywacji neuronu}
+		W całym opracowaniu będę przyjmował przykładową funckję aktywacji $\sigma$:
+		\begin{equation}\label{eq:activation:1}
+			\sigma\left(x\right) = \frac{1}{ 1 + e^{-x} }
+		\end{equation}
+		\begin{equation}\label{eq:activationderivative:1}
+		\sigma^{\prime}\left(x\right) = \frac{ -\left( 1 + e^{-x} \right)^{\prime} }{ \left( 1 + e^{-x} \right)^{2} } =
+		\frac{ e^{-x} }{ \left( 1 + e^{-x} \right)^{2} } = \sigma\left(x\right) \cdot \left( 1 - \sigma\left(x\right) \right)
+		\end{equation}
+		Funkcji aktywaci jest dużo, nie potrafię stwierdzić która jest lepsza od której, natomiast mogę powiedzić że powyższa mi się podoba najbardziej. \\
+		Aby obliczyć wyjście danego neuronu, potrzeba znać wszystkie wyjścia neuronów z poprzedniej warstwy. Ponieważ $ a_{0,n} = s_{n} $ to zaczynająć od pierwszej warstwy do warstwy $L-1$ możemy korzystać z poniższych wzorów:
+		\begin{equation} \label{eq:neuroninputsum:1}
+			S_{l,n} = S_{l,n}\left( a_{l-1}, \omega_{l} \right) = \beta_{l,n} + \sum_{i=0}^{ N_{l-1}-1 } a_{l-1,i} \cdot \omega_{l,n,i}
+		\end{equation}
+		\begin{equation} \label{eq:activation:2}
+			a_{l,n} = a_{l,n}\left( a_{l-1}, \omega_{l} \right) = \sigma\left( S_{l,n} \right) = \sigma \big( S_{l,n}\left( a_{l-1}, \omega_{l} \right) \big)
+		\end{equation}
+
+\newpage
+\section{Uczenie sieci}
+	\subsection{Błąd standardowy}
+		Poprawność wyjścia sieci (czyli jej błąd standardowy) dla danego zestawu oczekiwanych wyjść i wyjść wyliczonych przez sieć można określić wzorem:
+		\begin{equation} \label{eq:standardlabel:1}
+			\varepsilon \left( a_{L-1}, t_{i} \right) = \sum_{i=0}^ {N_{L-1}-1 } \left( a_{L-1,i} - t_{i} \right)^{2}
+		\end{equation}
+	
+	\subsection{Cel uczenia sieci}
+		Uczeniem sieci neuronowej chcemy osiągnąć sytuację w której wyjście sieci dla danego wejścia będzie jak najmniej odbiegało od oczekiwanego wyjścia, czyli krócej, chcemy znaleźć minimum funkcji błędu standardowego. Ponieważ dla każdego zestawu wyjść oczekiwanych mamy inną funckje błędu standardowego. Oznacza to że musielibyśmy znaleźć minimum wszystkichh tych funkcji. Ponieważ te minima mogą być zupełnie różne dla różnych wyjść oczekiwanych, chcemy dążyć do minimów każdej z tych funkcji błędu standardowego.
+		
+	\subsection{Minimalizacja błędu standardowego}
+		W jaki sposób możemy zminimalizować błąd dla jednego zestawu wejść i wyjść docelowych? Możemy modyfikować tylko wagi neuronów, czyli funkcję błędu standardowego będziemy minimalizować względem wag neuronów, a nie wejść sieci. Zmienimy argumenty funkcji błędu standardowego na jej parametry, a wagi neuronów zamienimy na argumenty funkcji błędu:
+		\begin{equation} \label{eq:standarderror:2}
+			\varepsilon \left( \omega \right) = \sum_{i=0}^ {N_{L-1}-1 } \bigg( a_{L-1,i} \Big( a_{L-2}, \omega_{L-1} \Big) - t_{i} \bigg)^{2}
+		\end{equation}
+		Aby dążyć do minimum funkcji błędu standardowego musimy podążać w kierunku w którym ta funkcja maleje, czyli w kierunku ujemnego gradientu funkcji błędu. Można więc zapisać wektor modyfikacji wag w sposób:
+		\begin{equation} \label{eq:deltaweight:1}
+			\Delta W = - \nabla \varepsilon\left( \omega \right)
+		\end{equation}
+		\begin{equation} \label{eq:deltaweight:2}
+			\begin{split}
+				\Delta\omega_{l,n,i} &= - g_{l,n,i} \\
+				\Delta\beta_{l,n} &= - g_{l,n}
+			\end{split}
+		\end{equation}
+		Aby uczenie przebiegało nie za wolno i nie za szybko (co opiszę w rozdziale \ref{chapter:overunderlearing}) można skorzystać z współczynnika uczenia $\alpha$. Końcowo otrzymujemy wzór na zmianę wagi:
+		\begin{equation} \label{eq:changeweight:1}
+			W = W + \alpha \cdot \Delta W
+		\end{equation}
+		\begin{equation} \label{eq:changeweight:2}
+			\begin{split}
+				\omega_{l,n,i} &= \omega_{l,n,i} - \alpha \cdot \Delta\omega_{l,n,i} \\
+				\beta_{l,n} &= \beta_{l,n} - \alpha \cdot \Delta\beta_{l,n}
+			\end{split}
+		\end{equation}
+		Aby obliczyć gradienty dla wag należy skożystać z poniższych wzorów, których wyprowadzenia znajdują się w rozdziale \ref{chapter:gradientcalculation}.
+		\begin{equation} \notag
+			\begin{split}
+				g_{L-1,n} &= 2\left( a_{L-1,n} - t_{n} \right) \cdot a_{L-1,n} \cdot \left( 1 - a_{L-1,n} \right) \\ \\
+				g_{L-1,n,i} &= g_{L-1,n} \cdot a_{L-2,i} \\
+				g_{l,n} &= a_{l,n} \cdot \left( 1 - a_{l,n} \right) \cdot \sum\limits_{j=0}^{N_{l+1}-1} \left( g_{l+1,j} \cdot \omega_{l+1,j,n} \right) \\
+				g_{l,n,i} &= g_{l,n} \cdot a_{l-1,i}
+			\end{split}
+		\end{equation}
+
+\newpage
+\section{Uproszczenie gradientu funckcji błędu standardowego}
+	Kolejność wag w poniższym wzorze nie ma większego znaczenia.
+	\begin{equation}
+		\nabla \varepsilon\left( \omega \right) =
+		\begin{bmatrix}
+			\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{0} } \\ \\
+			\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{1} } \\ \\
+			\dots \\ \\
+			\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{m-1} }
+		\end{bmatrix}
+	\end{equation}
+	W powyższym wzorze $ \omega_{i} $ oznacza i-tą wagę względem całego zbioru (włącznie z biasami), a $m$ oznacza ilość elementów owego zbioru.
+	
+	\subsection{Wyliczenie gradientów dla neuronów warstwy wyjściowej} \label{chapter:gradientcalculation}
+		\subsubsection{Dla wag}
+			Najpierw zajmiemy się wyliczeniem gradientu dla wag neuronów warstwy wyjściowej $ \omega_{L-1,n,i} $. Ponieważ dla każdej wagi każdego z neuronów wyjściowych liczy się to dokładnie tak samo:
+			\begin{equation} \label{eq:gradientweightoutput}
+				\begin{split}
+					\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{L-1,n,i} } &=
+					 \frac{ \partial \left( \sum\limits_{j=0}^ {N_{L-1}-1 } \left( a_{L-1,j} - t_{j} \right)^{2} \right) }{ \partial \omega_{L-1,n,i} } = 
+					 \frac{ \partial \left( a_{L-1,n} - t_{n} \right)^{2} }{ \partial \omega_{L-1,n,i} } = 
+					\frac{ \partial \left( a_{L-1,n} - t_{n} \right)^{2} }{ \partial a_{L-1,n} } \cdot \frac{ \partial a_{L-1,n} }{ \partial \omega_{L-1,n,i} } = \\
+					&= \frac{ \partial \left( a_{L-1,n} - t_{n} \right)^{2} }{ \partial a_{L-1,n} } \cdot \frac{ \partial \sigma\left( S_{L-1,n} \right) }{ \partial \omega_{L-1,n,i} } =
+					 \frac{ \partial \left( a_{L-1,n} - t_{n} \right)^{2} }{ \partial a_{L-1,n} } \cdot \frac{ \partial \sigma\left( S_{L-1,n} \right) }{ \partial S_{L-1,n} } \cdot \frac{ \partial S_{L-1,n} }{ \partial \omega_{L-1,n,i} } = \\
+					&= \frac{ \partial \left( a_{L-1,n} - t_{n} \right)^{2} }{ \partial a_{L-1,n} } \cdot \frac{ \partial \sigma\left( S_{L-1,n} \right) }{ \partial S_{L-1,n} } \cdot \frac{ \partial \left( \beta_{L,n} + \sum\limits_{j=0}^{ N_{L-2}-1 } a_{L-2,j} \cdot \omega_{L-1,n,j} \right) }{ \partial \omega_{L-1,n,i} } = \\
+					&= 2\left( a_{L-1,n} - t_{n} \right) \cdot \sigma^{\prime}\left( S_{L-1,n} \right) \cdot a_{L-2,i} = \\
+					&= \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,n} } \cdot a_{L-2,i}
+				\end{split}
+			\end{equation}
+			\begin{equation}
+			g_{L-1,n,i} = \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{L-1,n,i} } = \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,n} } \cdot a_{L-2,i} = g_{L-1,n} \cdot a_{L-2,i}
+			\end{equation}
+			
+		\subsubsection{Dla biasów}
+			Teraz należało by zająć się biasami neuronów warstwy wyjściowej. Analogicznie do wyprowadzenia \ref{eq:gradientweightoutput} mamy że:
+			\begin{equation} \label{eq:gradientbiasoutput}
+				\begin{split}
+					\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,n} } &=
+					 \frac{ \partial \left( a_{L-1,n} - t_{n} \right)^{2} }{ \partial a_{L-1,n} } \cdot \frac{ \partial \sigma\left( S_{L-1,n} \right) }{ \partial S_{L-1,n} } \cdot \frac{ \partial \left( \beta_{L,n} + \sum\limits_{j=0}^{ N_{L-2}-1 } a_{L-1,j} \cdot \omega_{L-1,n,j} \right) }{ \partial \beta_{L-1,n} } = \\
+					 &= 2\left( a_{L-1,n} - t_{n} \right) \cdot \sigma^{\prime}\left( S_{L-1,n} \right)
+				\end{split}
+			\end{equation}
+			\begin{equation}
+				g_{L-1,n} = \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,n} } = 2\left( a_{L-1,n} - t_{n} \right) \cdot \sigma^{\prime}\left( S_{L-1,n} \right) = 2\left( a_{L-1,n} - t_{n} \right) \cdot a_{L-1,n} \cdot \left( 1 - a_{L-1,n} \right)
+			\end{equation}
+			
+	\subsection{Wyliczenie gradientów dla neuronów warstw ukrytych}
+		\subsubsection{Dla warstwy L-2}
+			Gradient wag neuronów warstw ukrytych jest bardziej złożony niż dla neuronów warstw wyjściowych. Dlatego na samym początku zajmiemy się wyprowadzeniem gradientu wag dla warstwy $L-2$:
+			\begin{equation} \label{eq:gradientweighthidden:L-2}
+				\begin{split}
+					\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{L-2,n,i} } &=
+					 \frac{ \partial \left( \sum\limits_{j=0}^{N_{L-1}-1} \left( a_{L-1,j} - t_{j} \right)^{2} \right) }{ \partial \omega_{L-2,n,i} } = \sum\limits_{j=0}^{N_{L-1}-1} \frac{ \partial \left( a_{L-1,j} - t_{j} \right)^{2} }{ \partial \omega_{L-2,n,i} } = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \left( a_{L-1,j} - t_{j} \right)^{2} }{ \partial a_{L-1,j} } \cdot \frac{ \partial a_{L-1,j} }{ \partial \omega_{L-2,n,i} } \right) = 
+					 \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \left( a_{L-1,j} - t_{j} \right)^{2} }{ \partial a_{L-1,j} } \cdot \frac{ \partial \sigma\left( S_{L-1,j} \right) }{ \partial \omega_{L-2,n,i} } \right) = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \left( a_{L-1,j} - t_{j} \right)^{2} }{ \partial a_{L-1,j} } \cdot \frac{ \partial \sigma\left( S_{L-1,j} \right) }{ \partial S_{L-1,j} } \cdot \frac{ \partial S_{L-1,j} }{ \partial \omega_{L-2,n,i} } \right) = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( 2 \left( a_{L-1,j} - t_{j} \right) \cdot \sigma^{\prime}\left( S_{L-1,j} \right) \cdot \frac{ \partial \left( \beta_{L-1,j} + \sum\limits_{k=0}^{ N_{L-2}-1 } a_{L-2,k} \cdot \omega_{L-1,j,k} \right) }{ \partial \omega_{L-2,n,i} } \right) = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \sum\limits_{k=0}^{N_{L-2}-1} \frac{ \partial \left( a_{L-2,k} \cdot \omega_{L-1,j,k} \right) }{ \partial \omega_{L-2,n,i} } \right) = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \sum\limits_{k=0}^{N_{L-2}-1} \frac{ \partial a_{L-2,k} }{ \partial \omega_{L-2,n,i} } \cdot \omega_{L-1,j,k} \right) = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \frac{ \partial a_{L-2,n} }{ \partial \omega_{L-2,n,i} } \cdot \omega_{L-1,j,n} \right) = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \frac{ \partial \sigma \left( S_{L-2,n} \right) }{ \partial S_{L-2,n} } \cdot \frac{ \partial S_{L-2,n} }{ \partial \omega_{L-2,n,i} } \cdot \omega_{L-1,j,n} \right) = \\
+					&= \sigma^{\prime}\left( S_{L-2,n} \right) \cdot \frac{ \partial S_{L-2,n} }{ \partial \omega_{L-2,n,i} } \cdot \sum\limits_{j=0}^{N_{L-1}-1} \Big( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \omega_{L-1,j,n} \Big) = \\
+					&= \sigma^{\prime}\left( S_{L-2,n} \right) \cdot a_{L-3,i} \cdot \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \omega_{L-1,j,n} \right) = \\
+					&= \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-2,n} } \cdot a_{L-3,i}
+				\end{split}
+			\end{equation}
+			Teraz wyliczymy biasy dla tych samych neuronów korzystając z powyższego \ref{eq:gradientweighthidden:L-2} wzoru:
+			\begin{equation} \label{eq:gradientbiashidden:L-2}
+				\begin{split}
+					\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-2,n} } &= \sigma^{\prime}\left( S_{L-2,n} \right) \cdot \frac{ \partial S_{L-2,n} }{ \partial \beta_{L-2,n} } \cdot \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \omega_{L-1,j,n} \right) = \\
+					&= \sigma^{\prime}\left( S_{L-2,n} \right) \cdot \frac{ \partial \left( \beta_{L-1,j} + \sum\limits_{k=0}^{ N_{L-2}-1 } a_{L-2,k} \cdot \omega_{L-1,j,k} \right) }{ \partial \beta_{L-2,n} } \cdot \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \omega_{L-1,j,n} \right) = \\
+					&= \sigma^{\prime}\left( S_{L-2,n} \right) \cdot \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-1,j} } \cdot \omega_{L-1,j,n} \right)
+				\end{split}
+			\end{equation}
+			
+			
+		\subsubsection{Dla warstwy L-3}
+			Teraz wyprowadzimy gradient wag neuronów z warstwy $L-3$. Z powyższych wzorów ( \ref{eq:gradientweighthidden:L-2} )
+			\begin{equation} \label{eq:gradientweighthidden:L-3}
+				\begin{split}
+					\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{L-3,n,i} } &= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left(\omega\right) }{ \partial \beta_{L-1,j} } \cdot \sum\limits_{k=0}^{N_{L-2}-1} \left( \frac{ \partial a_{L-2,k} }{ \partial \omega_{L-3,n,i} } \cdot \omega_{L-1,j,k} \right) \right) \\
+					\frac{ \partial a_{L-2,k} }{ \partial \omega_{L-3,n,i} } &= \frac{ \partial \sigma \left( S_{L-2,k} \right) }{ \partial \omega_{L-3,n,i} } = \sigma^{\prime} \left( S_{L-2,k} \right) \cdot \frac{ \partial \left( \beta_{L-2,k} + \sum\limits_{c=0}^{N_{L-3}-1} \left( a_{L-3,c} \cdot \omega_{L-2,k,c} \right) \right) }{ \partial \omega_{L-3,n,i} } = \\
+					&= \sigma^{\prime} \left( S_{L-2,k} \right) \cdot \frac{ \partial \left( a_{L-3,n} \cdot \omega_{L-2,k,n} \right) }{ \partial \omega_{L-3,n,i} } = \sigma^{\prime} \left( S_{L-2,k} \right) \cdot \omega_{L-2,k,n} \cdot \sigma^{\prime} \left( S_{L-3,n} \right) \cdot \frac{ \partial S_{L-3,n} }{ \partial \omega_{L-3,n,i} } \\
+					\frac{ \partial S_{L-3,n} }{ \partial \omega_{L-3,n,i} } &= \ldots = a_{L-4,i} \\
+					\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{L-3,n,i} } &= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left(\omega\right) }{ \partial \beta_{L-1,j} } \cdot \sum\limits_{k=0}^{N_{L-2}-1} \left( \sigma^{\prime} \left( S_{L-2,k} \right) \cdot \omega_{L-2,k,n} \cdot \sigma^{\prime} \left( S_{L-3,n} \right) \cdot \frac{ \partial S_{L-3,n} }{ \partial \omega_{L-3,n,i} } \cdot \omega_{L-1,j,k} \right) \right) = \\
+					&= \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left(\omega\right) }{ \partial \beta_{L-1,j} } \cdot \sum\limits_{k=0}^{N_{L-2}-1} \left( \sigma^{\prime} \left( S_{L-2,k} \right) \cdot \omega_{L-2,k,n} \cdot \sigma^{\prime} \left( S_{L-3,n} \right) \cdot a_{L-4,i} \cdot \omega_{L-1,j,k} \right) \right) = \\
+					&= \sigma^{\prime} \left( S_{L-3,n} \right) \cdot a_{L-4,i} \cdot \sum\limits_{k=0}^{N_{L-2}-1} \left( \sigma^{\prime} \left( S_{L-2,k} \right) \cdot \omega_{L-2,k,n} \cdot \sum\limits_{j=0}^{N_{L-1}-1} \left( \frac{ \partial \varepsilon \left(\omega\right) }{ \partial \beta_{L-1,j} } \omega_{L-1,j,k} \right) \right) = \\
+					&= \sigma^{\prime} \left( S_{L-3,n} \right) \cdot a_{L-4,i} \cdot \sum\limits_{k=0}^{N_{L-2}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-2,k} } \cdot \omega_{L-2,k,n} \right) = \\
+					&= \sigma^{\prime} \left( S_{L-3,n} \right) \cdot a_{L-4,i} \cdot \sum\limits_{j=0}^{N_{L-2}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-2,j} } \cdot \omega_{L-2,j,n} \right)
+				\end{split}
+			\end{equation}
+			
+			Analogicznie do poprzednich wyprowadzeń biasów, z wzoru \ref{eq:gradientweighthidden:L-3} mamy że:
+			
+			\begin{equation} \label{eq:gradientbiashidden:L-3}
+				\begin{split}
+					\frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{L-3,n} } &= \sigma^{\prime} \left( S_{L-3,n} \right) \cdot \sum\limits_{j=0}^{N_{L-2}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{L-2,j} } \cdot \omega_{L-2,j,n} \right)
+				\end{split}
+			\end{equation}
+			
+			
+		\subsubsection{Rekurencyjny wzór dla biasów neuronów dowolnych wag ukrytych}
+		
+		Z poprzednich wzorów można wywnioskować:
+		
+		\begin{equation} \label{eq:gradientbiashidden}
+			\begin{split}
+				g_{l,n} &= \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{l,n} } = \sigma^{\prime} \left( S_{l,n} \right) \cdot \sum\limits_{j=0}^{N_{l+1}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{l+1,j} } \cdot \omega_{l+1,j,n} \right) = \\
+				&= a_{l,n} \cdot \left( 1 - a_{l,n} \right) \cdot \sum\limits_{j=0}^{N_{l+1}-1} \left( \frac{ \partial \varepsilon \left( \omega \right) }{ \partial \beta_{l+1,j} } \cdot \omega_{l+1,j,n} \right) = \\
+				&= a_{l,n} \cdot \left( 1 - a_{l,n} \right) \cdot \sum\limits_{j=0}^{N_{l+1}-1} \left( g_{l+1,j} \cdot \omega_{l+1,j,n} \right)
+			\end{split}
+		\end{equation}
+		
+		\subsubsection{Rekurencyjny wzór dla wag neuronów dowolnych wag ukrytych}
+		
+		\begin{equation} \label{eq:gradientweighthidden}
+			g_{l,n,i} = \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \omega_{l,n,i} } = \frac{ \partial \varepsilon\left( \omega \right) }{ \partial \beta_{l,n} } \cdot a_{l-1,i} = g_{l,n} \cdot a_{l-1,i}
+		\end{equation}
+		
+		
+		
+		
+		
+
+\newpage
+\section{Efekt jo-jo}
+	W trakcie uczenia sieci jest możliwość aby błąd standardowy rosną, może być to spowodowane przejściem przez 'górki' w funkcji błędu które otaczają minimum lokalne, za którą może się kryć niższe minimum lokalne od aktualnie znalezionego lub co gorsza wyżej położone minimum lokalne.
+
+\newpage
+\section{Over-learning i under-learning} \label{chapter:overunderlearing}
+
+\newpage
+\section{Współczynnik uczenia} \label{chapter:learningfactor}
+	\subsection{Zmiana współczynnika uczenia w czasie}
+
+\newpage
+\section{Uczenie genetyczne}
+	\subsection{Sposób uczenia}
+		\subsubsection{Mutacje}
+		\subsubsection{Cross-over}
+		\subsubsection{Funkcja dopasowania}
+	\subsection{System kar i nagród}
+
+\newpage
+\section{Sieć warstwowa nie mająca w pełni połączonych dwóch warstw}
+
+\newpage
+\section{Przykładowa implementacja sieci neuronowej uczonej metodą wstecznej propagacji błędu}
+	\href{https://github.com/DrwalinPCF/NeuralNetwork}{Link do repozytorium git z kodem}
+	\subsection{Obliczanie wyjścia sieci}
+	\subsection{Obliczanie gradientów}
+	\subsection{Modyfikacja wag}
+	
+\end{document}
